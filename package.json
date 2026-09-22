@@ -1,0 +1,53 @@
+{
+  "name": "@tidepool/uploader-common",
+  "version": "0.1.0",
+  "description": "Shared modules for processing diabetes device data into the Tidepool data model (struct parsing, BtUTC, data model builders)",
+  "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tidepool-org/uploader-common.git"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./struct": "./struct.js",
+    "./TimezoneOffsetUtil": "./TimezoneOffsetUtil.js",
+    "./eventAnnotations": "./eventAnnotations.js",
+    "./commonFunctions": "./commonFunctions.js",
+    "./objectBuilder": "./objectBuilder.js",
+    "./crc": "./crc.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "struct.js",
+    "TimezoneOffsetUtil.js",
+    "eventAnnotations.js",
+    "commonFunctions.js",
+    "objectBuilder.js",
+    "crc.js"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {
+    "bows": "1.7.2",
+    "lodash": "4.18.1",
+    "sundial": "1.7.6"
+  },
+  "devDependencies": {
+    "chai": "4.5.0",
+    "jest": "30.4.2",
+    "salinity": "0.0.11",
+    "sinon": "22.1.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/test/**/*.js"
+    ]
+  }
+}
