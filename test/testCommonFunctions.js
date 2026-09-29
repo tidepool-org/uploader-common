@@ -223,4 +223,59 @@ describe('commonFunctions.js', () => {
       expect(updatedBasal.annotations).to.be.undefined;
     });
   });
+
+  describe('updatePreviousDurations', () => {
+    const latestRecords = {
+      basal: {
+        id: 'basal-id', uploadId: 'upid_1234', type: 'basal', deliveryType: 'suspend',
+        time: '2026-09-16T18:00:00.000Z', duration: 0, annotations: [{ code: 'basal/unknown-duration' }],
+      },
+      'deviceEvent/status': {
+        id: 'status-id', uploadId: 'upid_1234', type: 'deviceEvent', subType: 'status', status: 'suspended',
+        time: '2026-09-16T18:00:00.000Z', duration: 0, reason: { suspended: 'manual' },
+      },
+    };
+
+    const updatePreviousDurations = (keepUpdatedRecordIds) => {
+      const cfg = {
+        groupId: 'group',
+        deviceInfo: { deviceId: 'tandemCIQ1234' },
+        keepUpdatedRecordIds,
+        api: {
+          getLatestRecord: async (groupId, deviceId, type, subType) => {
+            const record = latestRecords[subType ? `${type}/${subType}` : type];
+            return record ? structuredClone(record) : null;
+          },
+        },
+      };
+      const data = {
+        post_records: [
+          { type: 'deviceEvent', subType: 'status', status: 'resumed', time: '2026-09-16T18:15:00.000Z', reason: { resumed: 'manual' } },
+          { type: 'basal', deliveryType: 'scheduled', time: '2026-09-16T18:15:00.000Z', duration: 3600000 },
+        ],
+      };
+      return new Promise((resolve, reject) => {
+        common.updatePreviousDurations(data, cfg, (err, result) => (err ? reject(err) : resolve(result.post_records)));
+      });
+    };
+
+    test('updates the latest basal and merges the resume into the latest suspend, without their ids', async () => {
+      const records = await updatePreviousDurations(undefined);
+      expect(records.map((record) => [record.type, record.status || record.deliveryType, record.duration, record.id])).to.deep.equal([
+        ['basal', 'scheduled', 3600000, undefined],
+        ['basal', 'suspend', 900000, undefined],
+        ['deviceEvent', 'suspended', 900000, undefined],
+      ]);
+      expect(records[2].reason).to.deep.equal({ suspended: 'manual', resumed: 'manual' });
+    });
+
+    test('keeps the ids of the records it updates with keepUpdatedRecordIds', async () => {
+      const records = await updatePreviousDurations(true);
+      expect(records.map((record) => [record.type, record.id, record.uploadId])).to.deep.equal([
+        ['basal', undefined, undefined],
+        ['basal', 'basal-id', undefined],
+        ['deviceEvent', 'status-id', undefined],
+      ]);
+    });
+  });
 });

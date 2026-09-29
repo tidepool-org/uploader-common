@@ -19,7 +19,9 @@ const struct = require('@tidepool/uploader-common/struct')();
 ```
 
 Modules are CommonJS. `commonFunctions.updatePreviousDurations(data, cfg, cb)` expects the
-platform API on `cfg.api` (`getLatestRecord`); everything else is pure.
+platform API on `cfg.api` (`getLatestRecord`); everything else is pure. The records it updates have
+no `id`, as the Uploader uploads them as new records, unless `cfg.keepUpdatedRecordIds` is set: then
+they keep the `id` of the record they update, for a client that replaces it.
 
 The Uploader depends on this package and re-exports each module from its `lib/` so that
 existing relative imports keep working.
