@@ -204,12 +204,24 @@ exports.stripUnwantedFields = function(record) {
   return stripped;
 };
 
+// Updates the durations of the latest records of the previous upload that data follows, adding the updated
+// records to data.post_records. They have no id, as the Uploader uploads them as new records, unless
+// cfg.keepUpdatedRecordIds is set: then they keep the id of the record they update, for a client that
+// replaces it.
 exports.updatePreviousDurations = async function(data, cfg, cb) {
   const api = cfg.api;
+  const getLatestRecord = async (type, subType) => {
+    const record = await api.getLatestRecord(cfg.groupId, cfg.deviceInfo.deviceId, type, subType);
+    const latestRecord = this.stripUnwantedFields(record);
+    if (latestRecord != null && cfg.keepUpdatedRecordIds && record.id != null) {
+      latestRecord.id = record.id;
+    }
+    return latestRecord;
+  };
 
   try {
     // update last basal
-    const lastBasal = this.stripUnwantedFields(await api.getLatestRecord(cfg.groupId, cfg.deviceInfo.deviceId, 'basal'));
+    const lastBasal = await getLatestRecord('basal');
     let datum = _.find(data.post_records, {type: 'basal'});
     if (datum != null && lastBasal != null) {
       const updatedBasal = this.updateDuration(datum, lastBasal);
@@ -220,7 +232,7 @@ exports.updatePreviousDurations = async function(data, cfg, cb) {
 
     // update last suspend event
     if (lastBasal != null && lastBasal.deliveryType === 'suspend') {
-      const lastDeviceEvent = this.stripUnwantedFields(await api.getLatestRecord(cfg.groupId, cfg.deviceInfo.deviceId, 'deviceEvent', 'status'));
+      const lastDeviceEvent = await getLatestRecord('deviceEvent', 'status');
       if (lastDeviceEvent.subType === 'status') {
         const index = _.findIndex(data.post_records, {type: 'deviceEvent', subType: 'status'});
         datum = data.post_records[index];
@@ -247,7 +259,7 @@ exports.updatePreviousDurations = async function(data, cfg, cb) {
     }
 
     // update last pump settings override
-    const lastPumpSettingsOverride = this.stripUnwantedFields(await api.getLatestRecord(cfg.groupId, cfg.deviceInfo.deviceId, 'deviceEvent', 'pumpSettingsOverride'));
+    const lastPumpSettingsOverride = await getLatestRecord('deviceEvent', 'pumpSettingsOverride');
 
     const index = _.findIndex(data.post_records, {type: 'deviceEvent', subType: 'pumpSettingsOverride'});
     datum = data.post_records[index];
