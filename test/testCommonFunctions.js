@@ -269,6 +269,21 @@ describe('commonFunctions.js', () => {
       expect(records[2].reason).to.deep.equal({ suspended: 'manual', resumed: 'manual' });
     });
 
+    test('updates the latest suspend basal when there is no latest status', async () => {
+      const status = latestRecords['deviceEvent/status'];
+      delete latestRecords['deviceEvent/status'];
+      try {
+        const records = await updatePreviousDurations(undefined);
+        expect(records.map((record) => [record.type, record.status || record.deliveryType, record.duration])).to.deep.equal([
+          ['deviceEvent', 'resumed', undefined],
+          ['basal', 'scheduled', 3600000],
+          ['basal', 'suspend', 900000],
+        ]);
+      } finally {
+        latestRecords['deviceEvent/status'] = status;
+      }
+    });
+
     test('keeps the ids of the records it updates with keepUpdatedRecordIds', async () => {
       const records = await updatePreviousDurations(true);
       expect(records.map((record) => [record.type, record.id, record.uploadId])).to.deep.equal([

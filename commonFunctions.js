@@ -233,7 +233,8 @@ exports.updatePreviousDurations = async function(data, cfg, cb) {
     // update last suspend event
     if (lastBasal != null && lastBasal.deliveryType === 'suspend') {
       const lastDeviceEvent = await getLatestRecord('deviceEvent', 'status');
-      if (lastDeviceEvent.subType === 'status') {
+      // a suspend basal can come without a status event, as from basal delivery logs
+      if (lastDeviceEvent != null && lastDeviceEvent.subType === 'status') {
         const index = _.findIndex(data.post_records, {type: 'deviceEvent', subType: 'status'});
         datum = data.post_records[index];
 
