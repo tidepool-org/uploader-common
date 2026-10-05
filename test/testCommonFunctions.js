@@ -225,18 +225,20 @@ describe('commonFunctions.js', () => {
   });
 
   describe('updatePreviousDurations', () => {
-    const latestRecords = {
-      basal: {
-        id: 'basal-id', uploadId: 'upid_1234', type: 'basal', deliveryType: 'suspend',
-        time: '2026-09-16T18:00:00.000Z', duration: 0, annotations: [{ code: 'basal/unknown-duration' }],
-      },
-      'deviceEvent/status': {
-        id: 'status-id', uploadId: 'upid_1234', type: 'deviceEvent', subType: 'status', status: 'suspended',
-        time: '2026-09-16T18:00:00.000Z', duration: 0, reason: { suspended: 'manual' },
-      },
+    const latestBasal = {
+      id: 'basal-id', uploadId: 'upid_1234', type: 'basal', deliveryType: 'suspend',
+      time: '2026-09-16T18:00:00.000Z', duration: 0, annotations: [{ code: 'basal/unknown-duration' }],
     };
+    // a suspended status still waiting for its resume, as when the previous upload ended while the pump was suspended
+    const pendingStatus = {
+      id: 'status-id', uploadId: 'upid_1234', type: 'deviceEvent', subType: 'status', status: 'suspended',
+      time: '2026-09-16T18:00:00.000Z', duration: 0, reason: { suspended: 'manual' }, payload: { reason: 'User aborted' },
+      annotations: [{ code: 'status/incomplete-tuple' }],
+    };
+    const resume = { type: 'deviceEvent', subType: 'status', status: 'resumed', time: '2026-09-16T18:15:00.000Z', reason: { resumed: 'manual' } };
+    const basal = { type: 'basal', deliveryType: 'scheduled', time: '2026-09-16T18:15:00.000Z', duration: 3600000 };
 
-    const updatePreviousDurations = (keepUpdatedRecordIds) => {
+    const updatePreviousDurations = ({ keepUpdatedRecordIds, latestRecords, postRecords = [resume, basal] }) => {
       const cfg = {
         groupId: 'group',
         deviceInfo: { deviceId: 'tandemCIQ1234' },
@@ -248,29 +250,91 @@ describe('commonFunctions.js', () => {
           },
         },
       };
-      const data = {
-        post_records: [
-          { type: 'deviceEvent', subType: 'status', status: 'resumed', time: '2026-09-16T18:15:00.000Z', reason: { resumed: 'manual' } },
-          { type: 'basal', deliveryType: 'scheduled', time: '2026-09-16T18:15:00.000Z', duration: 3600000 },
-        ],
-      };
+      const data = { post_records: structuredClone(postRecords) };
       return new Promise((resolve, reject) => {
         common.updatePreviousDurations(data, cfg, (err, result) => (err ? reject(err) : resolve(result.post_records)));
       });
     };
 
-    test('updates the latest basal and merges the resume into the latest suspend, without their ids', async () => {
-      const records = await updatePreviousDurations(undefined);
+    const summary = (records) => records.map((record) => [record.type, record.status || record.deliveryType, record.duration]);
+
+    test('updates the latest basal and merges the resume into the latest suspended status, without their ids', async () => {
+      const records = await updatePreviousDurations({ latestRecords: { basal: latestBasal, 'deviceEvent/status': pendingStatus } });
       expect(records.map((record) => [record.type, record.status || record.deliveryType, record.duration, record.id])).to.deep.equal([
         ['basal', 'scheduled', 3600000, undefined],
         ['basal', 'suspend', 900000, undefined],
         ['deviceEvent', 'suspended', 900000, undefined],
       ]);
       expect(records[2].reason).to.deep.equal({ suspended: 'manual', resumed: 'manual' });
+      expect(records[2].payload).to.deep.equal({ suspended: 'User aborted' });
+      expect(records[2].annotations).to.be.undefined;
+    });
+
+    test('updates the latest suspend basal when there is no latest status', async () => {
+      const records = await updatePreviousDurations({ latestRecords: { basal: latestBasal } });
+      expect(summary(records)).to.deep.equal([
+        ['deviceEvent', 'resumed', undefined],
+        ['basal', 'scheduled', 3600000],
+        ['basal', 'suspend', 900000],
+      ]);
+    });
+
+    test('merges the resume into the latest suspended status whatever the latest basal is', async () => {
+      // the basal that says the pump is suspended comes minutes after the suspend, and the resume can come before it
+      const scheduledBasal = { ...latestBasal, deliveryType: 'scheduled', rate: 0.5 };
+      const records = await updatePreviousDurations({ latestRecords: { basal: scheduledBasal, 'deviceEvent/status': pendingStatus } });
+      expect(summary(records)).to.deep.equal([
+        ['basal', 'scheduled', 3600000],
+        ['basal', 'scheduled', 900000],
+        ['deviceEvent', 'suspended', 900000],
+      ]);
+      expect(records[2].reason).to.deep.equal({ suspended: 'manual', resumed: 'manual' });
+      expect(records[2].annotations).to.be.undefined;
+    });
+
+    test('keeps the resume when the latest suspended status has its resume', async () => {
+      const completeStatus = { ...pendingStatus, duration: 600000, reason: { suspended: 'manual', resumed: 'manual' } };
+      delete completeStatus.annotations;
+      const records = await updatePreviousDurations({ latestRecords: { basal: latestBasal, 'deviceEvent/status': completeStatus } });
+      expect(summary(records)).to.deep.equal([
+        ['deviceEvent', 'resumed', undefined],
+        ['basal', 'scheduled', 3600000],
+        ['basal', 'suspend', 900000],
+      ]);
+    });
+
+    test('keeps the resume when the latest status is a resume', async () => {
+      const latestResume = { ...resume, id: 'resume-id', time: '2026-09-16T17:00:00.000Z', annotations: [{ code: 'status/incomplete-tuple' }] };
+      const records = await updatePreviousDurations({ latestRecords: { basal: latestBasal, 'deviceEvent/status': latestResume } });
+      expect(summary(records)).to.deep.equal([
+        ['deviceEvent', 'resumed', undefined],
+        ['basal', 'scheduled', 3600000],
+        ['basal', 'suspend', 900000],
+      ]);
+    });
+
+    test('merges the first resume, not a suspended status, into the latest suspended status', async () => {
+      // a suspend and resume of this upload, before the resume of the latest suspended status
+      const completeStatus = {
+        type: 'deviceEvent', subType: 'status', status: 'suspended', time: '2026-09-16T18:05:00.000Z', duration: 300000,
+        reason: { suspended: 'manual', resumed: 'manual' },
+      };
+      const records = await updatePreviousDurations({
+        latestRecords: { basal: latestBasal, 'deviceEvent/status': pendingStatus },
+        postRecords: [completeStatus, resume, basal],
+      });
+      expect(summary(records)).to.deep.equal([
+        ['deviceEvent', 'suspended', 300000],
+        ['basal', 'scheduled', 3600000],
+        ['basal', 'suspend', 900000],
+        ['deviceEvent', 'suspended', 900000],
+      ]);
+      expect(records[0]).to.deep.equal(completeStatus);
+      expect(records[3].time).to.equal('2026-09-16T18:00:00.000Z');
     });
 
     test('keeps the ids of the records it updates with keepUpdatedRecordIds', async () => {
-      const records = await updatePreviousDurations(true);
+      const records = await updatePreviousDurations({ keepUpdatedRecordIds: true, latestRecords: { basal: latestBasal, 'deviceEvent/status': pendingStatus } });
       expect(records.map((record) => [record.type, record.id, record.uploadId])).to.deep.equal([
         ['basal', undefined, undefined],
         ['basal', 'basal-id', undefined],
