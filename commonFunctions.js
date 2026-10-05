@@ -230,31 +230,28 @@ exports.updatePreviousDurations = async function(data, cfg, cb) {
       }
     }
 
-    // update last suspend event
-    if (lastBasal != null && lastBasal.deliveryType === 'suspend') {
-      const lastDeviceEvent = await getLatestRecord('deviceEvent', 'status');
-      // a suspend basal can come without a status event, as from basal delivery logs
-      if (lastDeviceEvent != null && lastDeviceEvent.subType === 'status') {
-        const index = _.findIndex(data.post_records, {type: 'deviceEvent', subType: 'status'});
-        datum = data.post_records[index];
+    // complete the last suspend event: when the previous upload ended while the pump was suspended,
+    // its suspended status is waiting for its resume, which this upload brings as a resume on its own
+    const resumeIndex = _.findIndex(data.post_records, {type: 'deviceEvent', subType: 'status', status: 'resumed'});
+    if (resumeIndex > -1) {
+      const lastStatus = await getLatestRecord('deviceEvent', 'status');
+      if (lastStatus != null && lastStatus.status === 'suspended' && annotate.isAnnotated(lastStatus, 'status/incomplete-tuple')) {
+        datum = data.post_records[resumeIndex];
+        const updatedStatus = this.updateDuration(datum, lastStatus);
 
-        if (index > -1) {
-          const updatedStatus = this.updateDuration(datum, lastDeviceEvent);
+        if (updatedStatus) {
+          updatedStatus.reason.resumed = datum.reason.resumed;
 
-          if (updatedStatus) {
-            updatedStatus.reason.resumed = datum.reason.resumed;
-
-            if (lastDeviceEvent.payload && lastDeviceEvent.payload.reason != null) {
-              updatedStatus.payload.suspended = lastDeviceEvent.payload.reason;
-              delete updatedStatus.payload.reason;
-            }
-            if (datum.payload && datum.payload.reason != null) {
-              updatedStatus.payload.resumed = datum.payload.reason;
-            }
-
-            data.post_records.push(updatedStatus);
-            data.post_records.splice(index, 1); // remove resume event that is now combined
+          if (lastStatus.payload && lastStatus.payload.reason != null) {
+            updatedStatus.payload.suspended = lastStatus.payload.reason;
+            delete updatedStatus.payload.reason;
           }
+          if (datum.payload && datum.payload.reason != null) {
+            updatedStatus.payload = _.assign({}, updatedStatus.payload, {resumed: datum.payload.reason});
+          }
+
+          data.post_records.push(updatedStatus);
+          data.post_records.splice(resumeIndex, 1); // remove resume event that is now combined
         }
       }
     }
