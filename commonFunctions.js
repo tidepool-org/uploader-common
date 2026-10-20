@@ -173,10 +173,16 @@ exports.updateDuration = function(event, lastEvent) {
 
   if (updatedDuration >= 0) {
     debug('Updating duration of last event from previous upload');
-    if((lastEvent.subType !== 'pumpSettingsOverride') && lastEvent.duration > 0) {
+    // Only an event cut short keeps its planned duration as expectedDuration: an event the next one extends, such as
+    // a final basal fabricated to its schedule boundary, would otherwise get one shorter than its duration, which
+    // the platform rejects
+    if((lastEvent.subType !== 'pumpSettingsOverride') && lastEvent.duration > updatedDuration) {
       lastEvent.expectedDuration = lastEvent.duration;
     }
     lastEvent.duration = updatedDuration;
+    if (lastEvent.expectedDuration !== undefined && lastEvent.expectedDuration <= lastEvent.duration) {
+      delete lastEvent.expectedDuration;
+    }
 
     if (withAnnotation(lastEvent)) {
       // if the event was previously annotated because of the missing event,

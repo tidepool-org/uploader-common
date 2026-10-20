@@ -222,6 +222,40 @@ describe('commonFunctions.js', () => {
       expect(updatedBasal.duration).to.equal(1800000);
       expect(updatedBasal.annotations).to.be.undefined;
     });
+
+    const scheduledBasal = (time, duration) => builder.makeScheduledBasal()
+      .with_deviceTime(time.slice(0, 19))
+      .with_time(time)
+      .with_rate(0.3)
+      .with_duration(duration)
+      .with_scheduleName('Test')
+      .with_conversionOffset(0)
+      .with_timezoneOffset(0)
+      .done();
+
+    test('keeps the planned duration as expectedDuration when the next event cuts the previous one short', () => {
+      const previous = scheduledBasal('2026-10-15T08:04:55.000Z', 3600000);
+      const updatedBasal = common.updateDuration(scheduledBasal('2026-10-15T08:34:55.000Z', 1800000), previous);
+      expect(updatedBasal.duration).to.equal(1800000);
+      expect(updatedBasal.expectedDuration).to.equal(3600000);
+    });
+
+    test('sets no expectedDuration when the next event extends a basal fabricated to its schedule boundary', () => {
+      const previous = scheduledBasal('2026-10-15T08:04:55.000Z', 3305000);
+      annotate.annotateEvent(previous, 'final-basal/fabricated-from-schedule');
+      const updatedBasal = common.updateDuration(scheduledBasal('2026-10-15T09:05:00.000Z', 6005000), previous);
+      expect(updatedBasal.duration).to.equal(3605000);
+      expect(updatedBasal.expectedDuration).to.be.undefined;
+      expect(updatedBasal.annotations).to.be.undefined;
+    });
+
+    test('drops an expectedDuration the extended duration reaches', () => {
+      const previous = scheduledBasal('2026-10-15T08:04:55.000Z', 1000000);
+      previous.expectedDuration = 1500000;
+      const updatedBasal = common.updateDuration(scheduledBasal('2026-10-15T08:34:55.000Z', 1800000), previous);
+      expect(updatedBasal.duration).to.equal(1800000);
+      expect(updatedBasal.expectedDuration).to.be.undefined;
+    });
   });
 
   describe('updatePreviousDurations', () => {
