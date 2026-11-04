@@ -222,6 +222,22 @@ describe('commonFunctions.js', () => {
       expect(updatedBasal.duration).to.equal(1800000);
       expect(updatedBasal.annotations).to.be.undefined;
     });
+
+    test('removes the off-schedule rate of a basal of unknown duration', () => {
+      const offScheduleBasal = { ...lastBasal, annotations: [{ code: 'tandem/basal/off-schedule-rate' }, { code: 'basal/unknown-duration' }] };
+      const updatedBasal = common.updateDuration(basal, offScheduleBasal);
+      expect(updatedBasal.annotations).to.be.undefined;
+    });
+
+    test('keeps the annotations that are not placeholders for the duration', () => {
+      const newDayBasal = {
+        ...lastBasal,
+        annotations: [{ code: 'tandem/basal/fabricated-from-new-day' }, { code: 'final-basal/fabricated-from-schedule' }, { code: 'uncertain-timestamp' }],
+      };
+      const updatedBasal = common.updateDuration(basal, newDayBasal);
+      expect(updatedBasal.duration).to.equal(1800000);
+      expect(updatedBasal.annotations).to.deep.equal([{ code: 'tandem/basal/fabricated-from-new-day' }, { code: 'uncertain-timestamp' }]);
+    });
   });
 
   describe('updatePreviousDurations', () => {
@@ -331,6 +347,23 @@ describe('commonFunctions.js', () => {
       ]);
       expect(records[0]).to.deep.equal(completeStatus);
       expect(records[3].time).to.equal('2026-09-16T18:00:00.000Z');
+    });
+
+    test('completes the latest override and keeps its fabricated-from-new-day annotation', async () => {
+      // an override split at midnight that was still active when the previous upload ended
+      const latestOverride = {
+        id: 'override-id', uploadId: 'upid_1234', type: 'deviceEvent', subType: 'pumpSettingsOverride', overrideType: 'sleep',
+        time: '2026-09-16T00:00:00.000Z', duration: 10800000,
+        annotations: [{ code: 'tandem/pumpSettingsOverride/fabricated-from-new-day' }, { code: 'tandem/pumpSettingsOverride/estimated-duration' }],
+      };
+      const normal = {
+        type: 'deviceEvent', subType: 'pumpSettingsOverride', overrideType: 'normal', previousOverride: 'sleep',
+        time: '2026-09-16T07:00:00.000Z', duration: 0,
+      };
+      const records = await updatePreviousDurations({ latestRecords: { 'deviceEvent/pumpSettingsOverride': latestOverride }, postRecords: [normal] });
+      expect(records.map((record) => [record.overrideType, record.time, record.duration, record.annotations])).to.deep.equal([
+        ['sleep', '2026-09-16T00:00:00.000Z', 25200000, [{ code: 'tandem/pumpSettingsOverride/fabricated-from-new-day' }]],
+      ]);
     });
 
     test('keeps the ids of the records it updates with keepUpdatedRecordIds', async () => {

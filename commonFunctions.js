@@ -149,20 +149,18 @@ Number.prototype.toFixedNumber = function(significant){
   return +( Math.round(this*pow) / pow );
 };
 
-exports.updateDuration = function(event, lastEvent) {
+// The annotations that stand in for a duration the next event gives. off-schedule-rate is why a final basal's duration
+// is unknown.
+const isDurationPlaceholder = function(ann) {
+  return ann.code === 'final-basal/fabricated-from-schedule' ||
+         ann.code === 'basal/unknown-duration' ||
+         ann.code === 'status/incomplete-tuple' ||
+         ann.code === 'bolus/extended-in-progress' ||
+         ann.code === 'tandem/pumpSettingsOverride/estimated-duration' ||
+         _.endsWith(ann.code, '/basal/off-schedule-rate');
+};
 
-  const withAnnotation = function(event) {
-    if(_.find(event.annotations || [], function(ann) {
-        return ann.code === 'final-basal/fabricated-from-schedule' ||
-               ann.code === 'basal/unknown-duration' ||
-               ann.code === 'status/incomplete-tuple' ||
-               ann.code === 'bolus/extended-in-progress' ||
-               ann.code === 'tandem/pumpSettingsOverride/estimated-duration';
-      })) {
-      return true;
-    }
-    return false;
-  };
+exports.updateDuration = function(event, lastEvent) {
 
   let updatedDuration = Date.parse(event.time) - Date.parse(lastEvent.time);
 
@@ -178,10 +176,12 @@ exports.updateDuration = function(event, lastEvent) {
     }
     lastEvent.duration = updatedDuration;
 
-    if (withAnnotation(lastEvent)) {
-      // if the event was previously annotated because of the missing event,
-      // we can now remove the annotations
+    // the placeholders no longer apply; the other annotations, as a fabricated-from-new-day override, still do
+    const annotations = _.reject(lastEvent.annotations, isDurationPlaceholder);
+    if (annotations.length === 0) {
       lastEvent = _.omit(lastEvent, 'annotations');
+    } else if (annotations.length < lastEvent.annotations.length) {
+      lastEvent.annotations = annotations;
     }
 
     return lastEvent;
