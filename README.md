@@ -18,16 +18,7 @@ const builder = require('@tidepool/uploader-common/objectBuilder')();
 const struct = require('@tidepool/uploader-common/struct')();
 ```
 
-Modules are CommonJS. `commonFunctions.updatePreviousDurations(data, cfg, cb)` expects the
-platform API on `cfg.api` (`getLatestRecord`); everything else is pure. The records it updates have
-no `id`, as the Uploader uploads them as new records, unless `cfg.keepUpdatedRecordIds` is set: then
-they keep the `id` of the record they update, for a client that replaces it. A resume in the new data
-completes the latest `deviceEvent`/`status` record when that is a suspended status still waiting for
-its resume (annotated `status/incomplete-tuple`), whatever the latest basal is. An updated record
-loses the annotations that stood in for its duration (as `basal/unknown-duration` or
-`tandem/pumpSettingsOverride/estimated-duration`) and keeps the others (as
-`tandem/pumpSettingsOverride/fabricated-from-new-day`, which Tidepool Web needs to join an override
-split at midnight).
+Modules are CommonJS.
 
 The Uploader depends on this package and re-exports each module from its `lib/` so that
 existing relative imports keep working.
